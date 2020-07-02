@@ -13,6 +13,12 @@ interface Request {
   filename: string;
 }
 
+interface TransactionData {
+  title: string;
+  type: 'income' | 'outcome';
+  value: number;
+}
+
 class ImportTransactionsService {
   async execute({ filename }: Request): Promise<Transaction[]> {
     const csvFilePath = path.join(uploadConfig.directory, filename);
@@ -26,17 +32,16 @@ class ImportTransactionsService {
     });
 
     const parseCSV = readCSVStream.pipe(parseStream);
-
-    const titles: string[] = [];
-    const types: 'income' | 'outcome'[] = [];
-    const values: number[] = [];
     const categories: string[] = [];
+    const transactionsData: TransactionData[] = [];
 
     parseCSV.on('data', line => {
       if (line.length === 4 && !isNaN(Number(line[2]))) {
-        titles.push(line[0]);
-        types.push(line[1]);
-        values.push(Number(line[2]));
+        transactionsData.push({
+          title: line[0],
+          type: line[1],
+          value: Number(line[2]),
+        });
         categories.push(line[3]);
       }
     });
@@ -48,32 +53,33 @@ class ImportTransactionsService {
     const transactionsRepository = getRepository(Transaction);
     const categoriesRepository = getRepository(Category);
 
-    const transactions = [];
+    const findCategories = categories.map(category =>
+      categoriesRepository.findOne({
+        where: { title: category },
+      }),
+    );
 
-    for (let idx = 0; idx < titles.length; idx += 1) {
-      const categoryData =
-        (await categoriesRepository.findOne({
-          where: { title: categories[idx] },
-        })) ||
-        categoriesRepository.create({
-          title: categories[idx],
-        });
+    const categoriesFindData = await Promise.all(findCategories);
 
-      if (!categoryData.id) {
-        const test = await categoriesRepository.save(categoryData);
-      }
+    const categoriesToSave = categoriesFindData
+      .map(
+        (category, idx) =>
+          category || categoriesRepository.create({ title: categories[idx] }),
+      )
+      .map(category => categoriesRepository.save(category));
 
-      const transaction = transactionsRepository.create({
-        title: titles[idx],
-        type: types[idx],
-        value: values[idx],
-        category: categoryData,
-      });
+    const categoriesAllData = await Promise.all(categoriesToSave);
 
-      await transactionsRepository.save(transaction);
+    const transactionsToSave = transactionsData
+      .map((transaction, idx) =>
+        transactionsRepository.create({
+          ...transaction,
+          category: categoriesAllData[idx],
+        }),
+      )
+      .map(transaction => transactionsRepository.save(transaction));
 
-      transactions.push(transaction);
-    }
+    const transactions = await Promise.all(transactionsToSave);
 
     return transactions;
   }

@@ -1,6 +1,6 @@
 import { MigrationInterface, QueryRunner, Table } from 'typeorm';
 
-export default class CreateTransactions1593353533251
+export default class CreateTransactions1593594980410
   implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.createTable(
@@ -19,12 +19,12 @@ export default class CreateTransactions1593353533251
             type: 'varchar',
           },
           {
-            name: 'value',
-            type: 'int',
-          },
-          {
             name: 'type',
             type: 'varchar',
+          },
+          {
+            name: 'value',
+            type: 'int',
           },
           {
             name: 'category_id',
@@ -47,8 +47,8 @@ export default class CreateTransactions1593353533251
             columnNames: ['category_id'],
             referencedColumnNames: ['id'],
             referencedTableName: 'categories',
-            onDelete: 'SET NULL',
-            onUpdate: 'CASCADE',
+            onDelete: 'set null',
+            onUpdate: 'cascade',
           },
         ],
       }),

@@ -2,14 +2,11 @@ import csvParse from 'csv-parse';
 import fs from 'fs';
 import path from 'path';
 
-import { getCustomRepository, getRepository } from 'typeorm';
+import { getRepository } from 'typeorm';
 
 import uploadConfig from '../config/upload';
 
 import Transaction from '../models/Transaction';
-import TransactionsRepository from '../repositories/TransactionsRepository';
-
-import AppError from '../errors/AppError';
 import Category from '../models/Category';
 
 interface Request {
@@ -18,10 +15,9 @@ interface Request {
 
 class ImportTransactionsService {
   async execute({ filename }: Request): Promise<Transaction[]> {
-    // Leitura do arquivo
     const csvFilePath = path.join(uploadConfig.directory, filename);
 
-    const readCsvStream = fs.createReadStream(csvFilePath);
+    const readCSVStream = fs.createReadStream(csvFilePath);
 
     const parseStream = csvParse({
       from_line: 2,
@@ -29,53 +25,49 @@ class ImportTransactionsService {
       rtrim: true,
     });
 
-    const parseCSV = readCsvStream.pipe(parseStream);
+    const parseCSV = readCSVStream.pipe(parseStream);
 
-    const lines: [string, string, number, string][] = [];
+    const titles: string[] = [];
+    const types: 'income' | 'outcome'[] = [];
+    const values: number[] = [];
+    const categories: string[] = [];
 
     parseCSV.on('data', line => {
-      lines.push(line);
+      if (line.length === 4 && !isNaN(Number(line[2]))) {
+        titles.push(line[0]);
+        types.push(line[1]);
+        values.push(Number(line[2]));
+        categories.push(line[3]);
+      }
     });
 
     await new Promise(resolve => {
       parseCSV.on('end', resolve);
     });
 
-    // Cadastro no banco de dados
+    const transactionsRepository = getRepository(Transaction);
+    const categoriesRepository = getRepository(Category);
+
     const transactions = [];
 
-    const transactionsRepository = getCustomRepository(TransactionsRepository);
-
-    for (const line of lines) {
-      if (line[1] === 'outcome') {
-        const balance = await transactionsRepository.getBalance();
-
-        if (line[2] > balance.total) {
-          throw new AppError('Invalid value.', 400);
-        }
-      } else if (line[1] !== 'income') {
-        throw new AppError('Invalid type.', 400);
-      }
-
-      const categoriesRepository = getRepository(Category);
-
-      let categoryData = await categoriesRepository.findOne({
-        where: { title: line[3] },
-      });
-
-      if (!categoryData) {
-        categoryData = categoriesRepository.create({
-          title: line[3],
+    for (let idx = 0; idx < titles.length; idx += 1) {
+      const categoryData =
+        (await categoriesRepository.findOne({
+          where: { title: categories[idx] },
+        })) ||
+        categoriesRepository.create({
+          title: categories[idx],
         });
 
-        await categoriesRepository.save(categoryData);
+      if (!categoryData.id) {
+        const test = await categoriesRepository.save(categoryData);
       }
 
       const transaction = transactionsRepository.create({
-        title: line[0],
-        type: line[1],
-        value: line[2],
-        category_id: categoryData.id,
+        title: titles[idx],
+        type: types[idx],
+        value: values[idx],
+        category: categoryData,
       });
 
       await transactionsRepository.save(transaction);

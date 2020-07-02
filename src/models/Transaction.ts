@@ -27,8 +27,9 @@ class Transaction {
   @Column()
   category_id: string;
 
-  @ManyToOne(() => Category, { eager: true })
+  // eager: true => listar categories quando der um find nas transactions
   @JoinColumn({ name: 'category_id' })
+  @ManyToOne(() => Category, { eager: true })
   category: Category;
 
   @CreateDateColumn()
